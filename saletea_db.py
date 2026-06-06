@@ -48,34 +48,85 @@ tab_sales, tab_time, tab_prob, tab_customer, tab_history = st.tabs([
 ])
 
 # ==========================================
+# CÁC HÀM FORMAT CHUẨN HÓA SỐ LIỆU CHO DASHBOARD
+# ==========================================
+def format_number(num):
+    """Định dạng số lớn thành chuẩn K, M, B với 1 chữ số thập phân."""
+    if num >= 1e9:
+        return f"{num/1e9:.1f}B"
+    elif num >= 1e6:
+        return f"{num/1e6:.1f}M"
+    elif num >= 1e3:
+        return f"{num/1e3:.1f}K"
+    else:
+        return f"{num:.1f}"
+
+def format_pct(num):
+    """Định dạng phần trăm với 1 chữ số thập phân."""
+    return f"{num:.1f}%"
+
+# --- CẤU HÌNH BẢNG MÀU MỚI (DIVERGING GRADIENT) ---
+# Dải màu liên tục: Cam cháy đậm (Thấp nhất) -> Cam nhạt -> Xanh trà nhạt -> Xanh trà đậm (Cao nhất)
+TEA_ORANGE_GRADIENT = [
+    "#983C00", # Cam cháy cực đậm (Thấp nhất/Báo động)
+    "#D4661C", # Cam đậm
+    "#F3C5A3", # Cam nhạt
+    "#FDF1E7", # Trắng ngà (Khúc giữa)
+    "#DFEBD0", # Xanh trà nhạt
+    "#8CCD8B", # Xanh trà vừa
+    "#4E8752", # Xanh trà đậm
+    "#2C5E3B"  # Xanh nguyên bản (Cao nhất/Tốt nhất)
+]
+
+# Dải 20 màu rời rạc (Dùng cho Pie Chart, Line Chart nhiều nhóm) được xếp từ Xanh -> Cam
+DISCRETE_20_COLORS = [
+    "#2C5E3B", "#386C45", "#44794F", "#508759", "#5C9563", "#74B177", "#8CCD8B", "#98DB95", "#B8E6B6", "#DFEBD0", # 10 Xanh từ đậm đến nhạt
+    "#FDE2CD", "#F3C5A3", "#E69F6D", "#DA7937", "#CE5301", "#BD4B00", "#A84300", "#983C00", "#823300", "#692900"  # 10 Cam từ nhạt đến đậm dần
+]
+
+# Màu gốc cho chart 8, 11, 12
+TEA_COLORS = ["#2C5E3B", "#4E8752", "#73A96C", "#9CBF96", "#C7DCA7", "#DFEBD0"]
+MAIN_TEA_COLOR = "#2C5E3B"
+
+# ==========================================
 # TAB 1: DOANH THU & HÀNG HÓA (Chart 1 & 2)
 # ==========================================
 with tab_sales:
     st.header("Phân tích Doanh thu theo Mặt hàng & Nhóm hàng")
     
     # --- CHART 1 ---
-    st.subheader("1: Doanh thu và Số lượng theo Mặt Hàng")
+    st.subheader("1: Doanh thu theo Mặt Hàng")
     c1_df = df.groupby(['Mã mặt hàng', 'Tên mặt hàng', 'Mã nhóm hàng', 'Tên nhóm hàng']).agg(
         doanh_thu=('Thành tiền', 'sum'),
         sl=('SL', 'sum')
-    ).reset_index().sort_values(by='doanh_thu', ascending=False)
+    ).reset_index().sort_values(by='doanh_thu', ascending=False).head(20)
     
-    fig1 = px.bar(c1_df.head(20), x='Tên mặt hàng', y='doanh_thu', text='sl',
-                  title="Top 20 Mặt hàng có Doanh thu cao nhất (Số hiển thị là Số lượng bán)",
-                  color_discrete_sequence=[MAIN_TEA_COLOR])
+    c1_df['doanh_thu_label'] = c1_df['doanh_thu'].apply(format_number)
+    
+    fig1 = px.bar(c1_df, x='Tên mặt hàng', y='doanh_thu', text='doanh_thu_label',
+                  color='doanh_thu', color_continuous_scale=TEA_ORANGE_GRADIENT,
+                  title="Top 20 Mặt hàng có Doanh thu cao nhất",
+                  labels={'Tên mặt hàng': 'Mặt hàng', 'doanh_thu': 'Doanh thu (VNĐ)'})
+    fig1.update_traces(textposition='outside')
+    fig1.update_layout(coloraxis_showscale=False)
     st.plotly_chart(fig1, width='stretch')
     st.session_state.insights["chart_1"] = st.text_area("Insight Chart 1:", value=st.session_state.insights["chart_1"], key="in_1")
 
     st.markdown("---")
     
     # --- CHART 2 ---
-    st.subheader("2: Doanh thu theo Nhóm Hàng")
+    st.subheader("2: Tỷ trọng Doanh thu theo Nhóm Hàng")
     df['ma_ten_NH'] = "[" + df['Mã nhóm hàng'].astype(str) + "] " + df['Tên nhóm hàng'].astype(str)
-    c2_df = df.groupby('ma_ten_NH').agg(doanh_thu=('Thành tiền', 'sum')).reset_index()
+    c2_df = df.groupby('ma_ten_NH').agg(doanh_thu=('Thành tiền', 'sum')).reset_index().sort_values('doanh_thu', ascending=False)
     
+    c2_df['doanh_thu_label'] = c2_df['doanh_thu'].apply(format_number)
+    
+    # Pie chart dùng mảng rời rạc 20 màu, xếp theo value nên tự động Lớn=Xanh đậm, Nhỏ=Cam cháy
     fig2 = px.pie(c2_df, names='ma_ten_NH', values='doanh_thu', 
                   title="Tỷ lệ Doanh thu giữa các Nhóm Hàng",
-                  color_discrete_sequence=TEA_COLORS)
+                  color_discrete_sequence=DISCRETE_20_COLORS, 
+                  labels={'ma_ten_NH': 'Nhóm hàng', 'doanh_thu': 'Doanh thu'})
+    fig2.update_traces(text=c2_df['doanh_thu_label'], textinfo='label+percent+text', hovertemplate='%{label}<br>Doanh thu: %{text}<br>Tỷ lệ: %{percent}')
     st.plotly_chart(fig2, width='stretch')
     st.session_state.insights["chart_2"] = st.text_area("Insight Chart 2:", value=st.session_state.insights["chart_2"], key="in_2")
 
@@ -91,8 +142,16 @@ with tab_time:
     df['thang_num'] = df['Thời gian tạo đơn'].dt.month
     df['month'] = "Tháng " + df['thang_num'].astype(str)
     c3_df = df.groupby(['thang_num', 'month']).agg(doanh_thu=('Thành tiền', 'sum')).reset_index().sort_values('thang_num')
+    c3_df['doanh_thu_label'] = c3_df['doanh_thu'].apply(format_number)
     
-    fig3 = px.line(c3_df, x='month', y='doanh_thu', markers=True, title="Xu hướng doanh thu theo tháng", color_discrete_sequence=[MAIN_TEA_COLOR])
+    fig3 = px.line(c3_df, x='month', y='doanh_thu', markers=True, text='doanh_thu_label',
+                   title="Xu hướng doanh thu theo tháng",
+                   labels={'month': 'Tháng', 'doanh_thu': 'Doanh thu (VNĐ)'},
+                   color_discrete_sequence=["#8E9491"]) # Đường kẻ xám để làm nổi bật các chấm tròn
+    
+    # Chấm tròn chạy gradient theo độ lớn doanh thu
+    fig3.update_traces(textposition='top center', 
+                       marker=dict(size=12, color=c3_df['doanh_thu'], colorscale=TEA_ORANGE_GRADIENT, showscale=False, line=dict(width=2, color='white')))
     st.plotly_chart(fig3, width='stretch')
     st.session_state.insights["chart_3"] = st.text_area("Insight Chart 3:", value=st.session_state.insights["chart_3"], key="in_3")
     
@@ -100,7 +159,6 @@ with tab_time:
     
     # --- CHART 4 ---
     st.subheader("4: Doanh thu trung bình theo Thứ trong tuần")
-    # map theo weekday của pandas (Thứ 2=0... Chủ nhật=6) thành STT mong muốn (Thứ 2=2... Chủ nhật=8)
     day_map = {0: "Thứ 2", 1: "Thứ 3", 2: "Thứ 4", 3: "Thứ 5", 4: "Thứ 6", 5: "Thứ 7", 6: "Chủ nhật"}
     stt_map = {0: 2, 1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 8}
     
@@ -108,15 +166,17 @@ with tab_time:
     df['stt_tuan'] = df['Thời gian tạo đơn'].dt.weekday.map(stt_map)
     df['date_only'] = df['Thời gian tạo đơn'].dt.date
     
-    # Nhóm tính tổng tiền và đếm số ngày duy nhất
-    c4_base = df.groupby(['stt_tuan', 'ngay_trong_tuan']).agg(
-        tong_tien=('Thành tiền', 'sum'),
-        so_ngay=('date_only', 'nunique')
-    ).reset_index()
+    c4_base = df.groupby(['stt_tuan', 'ngay_trong_tuan']).agg(tong_tien=('Thành tiền', 'sum'), so_ngay=('date_only', 'nunique')).reset_index()
     c4_base['dttb'] = c4_base['tong_tien'] / c4_base['so_ngay']
     c4_base = c4_base.sort_values('stt_tuan')
+    c4_base['dttb_label'] = c4_base['dttb'].apply(format_number)
     
-    fig4 = px.bar(c4_base, x='ngay_trong_tuan', y='dttb', title="Doanh thu trung bình theo ngày trong tuần", color_discrete_sequence=[TEA_COLORS[1]])
+    fig4 = px.bar(c4_base, x='ngay_trong_tuan', y='dttb', text='dttb_label',
+                  color='dttb', color_continuous_scale=TEA_ORANGE_GRADIENT,
+                  title="Doanh thu trung bình theo ngày trong tuần",
+                  labels={'ngay_trong_tuan': 'Ngày trong tuần', 'dttb': 'Doanh thu Trung bình (VNĐ)'})
+    fig4.update_traces(textposition='outside')
+    fig4.update_layout(coloraxis_showscale=False)
     st.plotly_chart(fig4, width='stretch')
     st.session_state.insights["chart_4"] = st.text_area("Insight Chart 4:", value=st.session_state.insights["chart_4"], key="in_4")
     
@@ -127,31 +187,37 @@ with tab_time:
     df['ngay_num'] = df['Thời gian tạo đơn'].dt.day
     df['ngay'] = "Ngày " + df['ngay_num'].astype(str)
     
-    c5_base = df.groupby(['ngay_num', 'ngay']).agg(
-        tong_tien=('Thành tiền', 'sum'),
-        so_ngay=('date_only', 'nunique')
-    ).reset_index()
+    c5_base = df.groupby(['ngay_num', 'ngay']).agg(tong_tien=('Thành tiền', 'sum'), so_ngay=('date_only', 'nunique')).reset_index()
     c5_base['dttb'] = c5_base['tong_tien'] / c5_base['so_ngay']
     c5_base = c5_base.sort_values('ngay_num')
+    c5_base['dttb_label'] = c5_base['dttb'].apply(format_number)
     
-    fig5 = px.bar(c5_base, x='ngay', y='dttb', title="Doanh thu trung bình theo ngày trong tháng", color_discrete_sequence=[TEA_COLORS[2]])
+    fig5 = px.bar(c5_base, x='ngay', y='dttb', text='dttb_label',
+                  color='dttb', color_continuous_scale=TEA_ORANGE_GRADIENT,
+                  title="Doanh thu trung bình theo ngày trong tháng",
+                  labels={'ngay': 'Ngày', 'dttb': 'Doanh thu Trung bình (VNĐ)'})
+    fig5.update_traces(textposition='outside')
+    fig5.update_layout(coloraxis_showscale=False)
     st.plotly_chart(fig5, width='stretch')
     st.session_state.insights["chart_5"] = st.text_area("Insight Chart 5:", value=st.session_state.insights["chart_5"], key="in_5")
     
     st.markdown("---")
 
     # --- CHART 6 ---
-    st.subheader("6: Doanh thu trung bình theo Khung Giờ trong ngày")
+    st.subheader("6: Doanh thu trung bình theo Khung Giờ")
     df['gio_num'] = df['Thời gian tạo đơn'].dt.hour
     df['gio'] = df['gio_num'].astype(str) + ":00 - " + (df['gio_num'] + 1).astype(str) + ":59"
     
-    c6_base = df.groupby(['gio_num', 'gio']).agg(
-        tong_tien=('Thành tiền', 'sum'),
-        so_ngay=('date_only', 'nunique')
-    ).reset_index().sort_values('gio_num')
+    c6_base = df.groupby(['gio_num', 'gio']).agg(tong_tien=('Thành tiền', 'sum'), so_ngay=('date_only', 'nunique')).reset_index().sort_values('gio_num')
     c6_base['dttb'] = c6_base['tong_tien'] / c6_base['so_ngay']
+    c6_base['dttb_label'] = c6_base['dttb'].apply(format_number)
     
-    fig6 = px.bar(c6_base, x='gio', y='dttb', title="Khung giờ mua sắm trà đóng gói phổ biến (DTTB)", color_discrete_sequence=[TEA_COLORS[3]])
+    fig6 = px.bar(c6_base, x='gio', y='dttb', text='dttb_label',
+                  color='dttb', color_continuous_scale=TEA_ORANGE_GRADIENT,
+                  title="Khung giờ mua sắm phổ biến (Doanh thu TB)",
+                  labels={'gio': 'Khung giờ', 'dttb': 'Doanh thu Trung bình (VNĐ)'})
+    fig6.update_traces(textposition='outside')
+    fig6.update_layout(coloraxis_showscale=False)
     st.plotly_chart(fig6, width='stretch')
     st.session_state.insights["chart_6"] = st.text_area("Insight Chart 6:", value=st.session_state.insights["chart_6"], key="in_6")
 
@@ -161,54 +227,68 @@ with tab_time:
 # ==========================================
 with tab_prob:
     st.header("Phân tích tỷ lệ xuất hiện (Xác suất % đơn hàng)")
-    
     total_distinct_orders = df['Mã đơn hàng'].nunique()
     
     # --- CHART 7 ---
-    st.subheader("7: Xác suất xuất hiện Nhóm hàng trên tổng số đơn hàng")
+    st.subheader("7: Tỷ lệ xuất hiện Nhóm hàng trên tổng đơn")
     c7_df = df.groupby('ma_ten_NH').agg(so_don=('Mã đơn hàng', 'nunique')).reset_index()
     c7_df['xac_suat'] = (c7_df['so_don'] * 100) / total_distinct_orders
+    c7_df['xac_suat_label'] = c7_df['xac_suat'].apply(format_pct)
     
-    fig7 = px.bar(c7_df, x='xac_suat', y='ma_ten_NH', orientation='h', title="Xác suất (%) một đơn hàng bất kỳ có chứa nhóm hàng này", color_discrete_sequence=[MAIN_TEA_COLOR])
+    fig7 = px.bar(c7_df, x='xac_suat', y='ma_ten_NH', orientation='h', text='xac_suat_label',
+                  color='xac_suat', color_continuous_scale=TEA_ORANGE_GRADIENT,
+                  title="Tỷ lệ (%) đơn hàng có chứa Nhóm hàng",
+                  labels={'xac_suat': 'Tỷ lệ xuất hiện (%)', 'ma_ten_NH': 'Nhóm hàng'})
+    fig7.update_traces(textposition='outside')
+    fig7.update_layout(coloraxis_showscale=False, yaxis={'categoryorder':'total ascending'})
     st.plotly_chart(fig7, width='stretch')
     st.session_state.insights["chart_7"] = st.text_area("Insight Chart 7:", value=st.session_state.insights["chart_7"], key="in_7")
     
     st.markdown("---")
 
-    # --- CHART 8 ---
-    st.subheader("8: Xác suất xuất hiện Nhóm hàng theo từng Tháng")
+    # --- CHART 8 (Giữ nguyên theo yêu cầu) ---
+    st.subheader("8: Tỷ lệ xuất hiện Nhóm hàng theo Tháng")
     t1_c8 = df.groupby('thang_num').agg(tong_don=('Mã đơn hàng', 'nunique')).reset_index()
     t2_c8 = df.groupby(['thang_num', 'ma_ten_NH']).agg(so_don=('Mã đơn hàng', 'nunique')).reset_index()
     c8_res = pd.merge(t2_c8, t1_c8, on='thang_num')
     c8_res['xac_suat'] = (c8_res['so_don'] * 100) / c8_res['tong_don']
+    c8_res['xac_suat_label'] = c8_res['xac_suat'].apply(format_pct)
     
-    fig8 = px.bar(c8_res, x='thang_num', y='xac_suat', color='ma_ten_NH', barmode='group', title="Xác suất nhóm hàng xuất hiện trong đơn hàng phân rã theo từng tháng", color_discrete_sequence=TEA_COLORS)
+    fig8 = px.bar(c8_res, x='thang_num', y='xac_suat', color='ma_ten_NH', barmode='group', text='xac_suat_label',
+                  title="Biến động Tỷ lệ xuất hiện Nhóm hàng qua các tháng",
+                  labels={'thang_num': 'Tháng', 'xac_suat': 'Tỷ lệ xuất hiện (%)', 'ma_ten_NH': 'Nhóm hàng'},
+                  color_discrete_sequence=TEA_COLORS)
+    fig8.update_traces(textposition='outside')
     st.plotly_chart(fig8, width='stretch')
     st.session_state.insights["chart_8"] = st.text_area("Insight Chart 8:", value=st.session_state.insights["chart_8"], key="in_8")
     
     st.markdown("---")
 
     # --- CHART 9 ---
-    st.subheader("9: Xác suất Mặt hàng xuất hiện trong Nhóm hàng của nó")
+    st.subheader("9: Tỷ trọng đóng góp của Mặt hàng trong Nhóm hàng")
     df['ma_ten_MH'] = "[" + df['Mã mặt hàng'].astype(str) + "] " + df['Tên mặt hàng'].astype(str)
     t1_c9 = df.groupby('ma_ten_NH').agg(tong_don=('Mã đơn hàng', 'nunique')).reset_index()
     t2_c9 = df.groupby(['ma_ten_NH', 'ma_ten_MH']).agg(so_don=('Mã đơn hàng', 'nunique')).reset_index()
     c9_res = pd.merge(t2_c9, t1_c9, on='ma_ten_NH')
     c9_res['xac_suat'] = (c9_res['so_don'] * 100) / c9_res['tong_don']
+    c9_res['xac_suat_label'] = c9_res['xac_suat'].apply(format_pct)
     
-    # Cho phép người dùng lọc theo Nhóm hàng để biểu đồ đỡ bị rối vì quá nhiều mặt hàng
-    nhom_selected = st.selectbox("Chọn nhóm hàng để xem chi tiết Chart 9:", options=c9_res['ma_ten_NH'].unique())
+    nhom_selected = st.selectbox("Chọn nhóm hàng phân tích chi tiết (Chart 9):", options=c9_res['ma_ten_NH'].unique())
     c9_filtered = c9_res[c9_res['ma_ten_NH'] == nhom_selected].sort_values('xac_suat', ascending=False)
     
-    fig9 = px.bar(c9_filtered, x='ma_ten_MH', y='xac_suat', title=f"Tỷ lệ đóng góp đơn của mặt hàng trong nhóm: {nhom_selected}", color_discrete_sequence=[TEA_COLORS[1]])
+    fig9 = px.bar(c9_filtered, x='ma_ten_MH', y='xac_suat', text='xac_suat_label',
+                  color='xac_suat', color_continuous_scale=TEA_ORANGE_GRADIENT,
+                  title=f"Đóng góp của Mặt hàng thuộc nhóm: {nhom_selected}",
+                  labels={'ma_ten_MH': 'Mặt hàng', 'xac_suat': 'Tỷ lệ đóng góp (%)'})
+    fig9.update_traces(textposition='outside')
+    fig9.update_layout(coloraxis_showscale=False)
     st.plotly_chart(fig9, width='stretch')
     st.session_state.insights["chart_9"] = st.text_area("Insight Chart 9:", value=st.session_state.insights["chart_9"], key="in_9")
     
     st.markdown("---")
 
     # --- CHART 10 ---
-    st.subheader("10: Xác suất Mặt hàng trong Nhóm theo từng Tháng")
-    # Tạo định dạng như SQL concat
+    st.subheader("10: Xu hướng đóng góp của Mặt hàng theo Tháng")
     df['ma_ten_NH_alt'] = "[" + df['Mã nhóm hàng'].astype(str) + "]" + df['Tên nhóm hàng'].astype(str)
     df['ma_ten_MH_alt'] = "[" + df['Mã mặt hàng'].astype(str) + "]" + df['Tên mặt hàng'].astype(str)
     
@@ -216,17 +296,22 @@ with tab_prob:
     t2_c10 = df.groupby(['ma_ten_NH_alt', 'ma_ten_MH_alt', 'thang_num']).agg(so_don=('Mã đơn hàng', 'nunique')).reset_index()
     c10_res = pd.merge(t2_c10, t1_c10, on=['ma_ten_NH_alt', 'thang_num'])
     c10_res['xac_suat'] = (c10_res['so_don'] * 100) / c10_res['tong_don']
+    c10_res['xac_suat_label'] = c10_res['xac_suat'].apply(format_pct)
     
-    nhom_selected_10 = st.selectbox("Chọn nhóm hàng xem chi tiết Chart 10:", options=c10_res['ma_ten_NH_alt'].unique(), key="sb_10")
+    nhom_selected_10 = st.selectbox("Chọn nhóm hàng phân tích chi tiết (Chart 10):", options=c10_res['ma_ten_NH_alt'].unique(), key="sb_10")
     c10_filtered = c10_res[c10_res['ma_ten_NH_alt'] == nhom_selected_10]
     
-    fig10 = px.line(c10_filtered, x='thang_num', y='xac_suat', color='ma_ten_MH_alt', markers=True, title="Xu hướng thay đổi xác suất mặt hàng qua các tháng", color_discrete_sequence=TEA_COLORS)
+    fig10 = px.line(c10_filtered, x='thang_num', y='xac_suat', color='ma_ten_MH_alt', markers=True, text='xac_suat_label',
+                    title="Xu hướng thay đổi Tỷ trọng Mặt hàng qua các tháng",
+                    labels={'thang_num': 'Tháng', 'xac_suat': 'Tỷ lệ (%)', 'ma_ten_MH_alt': 'Mặt hàng'},
+                    color_discrete_sequence=DISCRETE_20_COLORS)
+    fig10.update_traces(textposition='top center')
     st.plotly_chart(fig10, width='stretch')
     st.session_state.insights["chart_10"] = st.text_area("Insight Chart 10:", value=st.session_state.insights["chart_10"], key="in_10")
 
 
 # ==========================================
-# TAB 4: PHÂN TÍCH KHÁCH HÀNG (Chart 11 & 12)
+# TAB 4: PHÂN TÍCH KHÁCH HÀNG (Chart 11 & 12 giữ nguyên màu)
 # ==========================================
 with tab_customer:
     st.header("Phân tích hành vi Khách hàng")
@@ -235,20 +320,27 @@ with tab_customer:
     
     with col1:
         # --- CHART 11 ---
-        st.subheader("11: Số lượng đơn theo Khách hàng")
+        st.subheader("11: Phân phối Số lượng đơn theo Khách hàng")
         c11_df = df.groupby('Mã khách hàng').agg(sl=('Mã đơn hàng', 'nunique')).reset_index()
-        fig11 = px.histogram(c11_df, x='sl', title="Phân phối số lượng đơn hàng của Khách hàng", color_discrete_sequence=[TEA_COLORS[0]])
+        
+        fig11 = px.histogram(c11_df, x='sl', 
+                             title="Tần suất mua hàng của Khách hàng",
+                             labels={'sl': 'Số lượng đơn hàng', 'count': 'Số lượng Khách hàng'},
+                             color_discrete_sequence=[TEA_COLORS[0]])
         st.plotly_chart(fig11, width='stretch')
         st.session_state.insights["chart_11"] = st.text_area("Insight Chart 11:", value=st.session_state.insights["chart_11"], key="in_11")
         
     with col2:
         # --- CHART 12 ---
-        st.subheader("12: Tổng chi tiêu theo Khách hàng (Tăng dần)")
+        st.subheader("12: Tổng chi tiêu theo Khách hàng")
         c12_df = df.groupby('Mã khách hàng').agg(tong_tien=('Thành tiền', 'sum')).reset_index().sort_values('tong_tien', ascending=True)
-        fig12 = px.box(c12_df, y='tong_tien', title="Phân bổ tổng chi tiêu khách hàng (Sắp xếp tăng dần)", color_discrete_sequence=[TEA_COLORS[2]])
+        
+        fig12 = px.box(c12_df, y='tong_tien', 
+                       title="Phân bổ Tổng chi tiêu Khách hàng",
+                       labels={'tong_tien': 'Tổng chi tiêu (VNĐ)', 'Mã khách hàng': 'Khách hàng'},
+                       color_discrete_sequence=[TEA_COLORS[2]])
         st.plotly_chart(fig12, width='stretch')
         st.session_state.insights["chart_12"] = st.text_area("Insight Chart 12:", value=st.session_state.insights["chart_12"], key="in_12")
-
 
 # ==========================================
 # TAB 5: LƯU LỊCH SỬ INSIGHT VÀO GG SHEETS (Qua Apps Script)
